@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-music-players/mpris"
 	"github.com/spf13/viper"
 )
 
@@ -108,7 +109,7 @@ func main() {
 	}
 
 	if *enableMpris {
-		mpris, err := RegisterPlayer(player, logger)
+		mpris, err := mpris.NewServer("stmp", player)
 		if err != nil {
 			fmt.Printf("Unable to register MPRIS with DBUS: %s\n", err)
 			fmt.Println("Try running without MPRIS")

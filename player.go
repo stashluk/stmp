@@ -61,11 +61,11 @@ func (p *Player) PlayNextTrack() error {
 	return nil
 }
 
-func (p *Player) Play(id string, uri string, title string, artist string, duration int) error {
+func (p *Player) PlayTrack(id string, uri string, title string, artist string, duration int) error {
 	p.Queue = []QueueItem{{id, uri, title, artist, duration}}
 	p.ReplaceInProgress = true
 	if ip, e := p.IsPaused(); ip && e == nil {
-		p.Pause()
+		p.TogglePause()
 	}
 	return p.Instance.Command([]string{"loadfile", uri})
 }
@@ -84,10 +84,30 @@ func (p *Player) IsPaused() (bool, error) {
 	return pause.(bool), err
 }
 
-// Pause toggles playing music
+// State returns the current player state
+func (p *Player) State() (int, error) {
+	loaded, err := p.IsSongLoaded()
+	if err != nil {
+		return PlayerError, err
+	}
+	if !loaded {
+		return PlayerStopped, nil
+	}
+
+	paused, err := p.IsPaused()
+	if err != nil {
+		return PlayerError, err
+	}
+	if paused {
+		return PlayerPaused, nil
+	}
+	return PlayerPlaying, nil
+}
+
+// TogglePause toggles playing music
 // If a song is playing, it is paused. If a song is paused, playing resumes. The
 // state after the toggle is returned, or an error.
-func (p *Player) Pause() (int, error) {
+func (p *Player) TogglePause() (int, error) {
 	loaded, err := p.IsSongLoaded()
 	if err != nil {
 		return PlayerError, err

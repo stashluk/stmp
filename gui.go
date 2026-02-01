@@ -422,7 +422,7 @@ func (ui *Ui) deletePlaylist(index int) {
 
 func makeSongHandler(id string, uri string, title string, artist string, duration int, player *Player, queueList *tview.List, starIdList map[string]struct{}) func() {
 	return func() {
-		player.Play(id, uri, title, artist, duration)
+		player.PlayTrack(id, uri, title, artist, duration)
 		updateQueueList(player, queueList, starIdList)
 	}
 }
@@ -844,9 +844,9 @@ func InitGui(indexes *[]SubsonicIndex, playlists *[]SubsonicPlaylist, connection
 			}
 			updateQueueList(ui.player, ui.queueList, ui.starIdList)
 		case keybind("playPause"):
-			status, err := ui.player.Pause()
+			status, err := ui.player.TogglePause()
 			if err != nil {
-				ui.connection.Logger.Printf("InitGui: Pause -- %s", err.Error())
+				ui.connection.Logger.Printf("InitGui: TogglePause -- %s", err.Error())
 				ui.startStopStatus.SetText("[::b]stmp: [red]error")
 				return nil
 			}

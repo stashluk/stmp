@@ -1,172 +1,109 @@
 package main
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/godbus/dbus/v5"
-	"github.com/godbus/dbus/v5/introspect"
-	"github.com/godbus/dbus/v5/prop"
+	"github.com/go-music-players/mpris"
+	"github.com/wildeyedskies/go-mpv/mpv"
 )
 
-type MprisPlayer struct {
-	conn   *dbus.Conn
-	player *Player
-	logger Logger
+// MPRIS Player interface implementation
+// Player directly implements mpris.Player interface
+
+// Play starts playback (implements mpris.Player)
+func (p *Player) Play() error {
+	isPaused, err := p.IsPaused()
+	if err != nil {
+		return err
+	}
+	if isPaused {
+		return p.Instance.SetProperty("pause", mpv.FORMAT_FLAG, false)
+	}
+	return nil
 }
 
-// Mandatory functions
-func (mpp MprisPlayer) Stop() {
-	if err := mpp.player.Stop(); err != nil {
-		mpp.logger.Printf(err.Error())
-	}
-}
-func (mpp MprisPlayer) Next() {
-	mpp.player.PlayNextTrack()
-}
-func (mpp MprisPlayer) Pause() {
-	psd, err := mpp.player.IsPaused()
+// Pause pauses playback (implements mpris.Player)
+func (p *Player) Pause() error {
+	isPaused, err := p.IsPaused()
 	if err != nil {
-		mpp.logger.Printf(err.Error())
-		return
+		return err
 	}
-	if !psd {
-		if _, err = mpp.player.Pause(); err != nil {
-			mpp.logger.Printf(err.Error())
-		}
+	if !isPaused {
+		return p.Instance.SetProperty("pause", mpv.FORMAT_FLAG, true)
 	}
-}
-func (mpp MprisPlayer) Play() {
-	psd, err := mpp.player.IsPaused()
-	if err != nil {
-		mpp.logger.Printf(err.Error())
-		return
-	}
-	if psd {
-		if _, err = mpp.player.Pause(); err != nil {
-			mpp.logger.Printf(err.Error())
-		}
-	}
-}
-func (mpp MprisPlayer) PlayPause() {
-	mpp.player.Pause()
-}
-func (mpp MprisPlayer) OpenUri(string) {
-	// TODO not implemented
-}
-func (mpp MprisPlayer) Previous() {
-	// TODO not implemented
-}
-func (mpp MprisPlayer) Seek(int) {
-	// TODO not implemented
-}
-func (mpp MprisPlayer) Seeked(int) {
-	// TODO not implemented
-}
-func (mpp MprisPlayer) SetPosition(string, int) {
-	// TODO not implemented
+	return nil
 }
 
-func RegisterPlayer(p *Player, l Logger) (MprisPlayer, error) {
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		return MprisPlayer{}, err
-	}
-	parts := []string{"", "org", "mpris", "MediaPlayer2", "Player"}
-	name := strings.Join(parts[1:], ".")
-	mpp := MprisPlayer{
-		conn:   conn,
-		player: p,
-		logger: l,
-	}
-	err = conn.ExportAll(mpp, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player")
-	if err != nil {
-		return MprisPlayer{}, err
-	}
-	/*
-		func (mpp MprisPlayer) Metadata() string {
-			if len(mpp.player.Queue) == 0 {
-				return ""
-			}
-			playing := mpp.player.Queue[0]
-			return fmt.Sprintf("%s - %s", playing.Artist, playing.Title)
-		}
-		Shuffle true/false
-		LoopStatus "Noneon, "Track", "Playlist"
-		Position time_in_us
-		MaximumRate, Rate, MinimumRate (float 0-1, x speed)
-	*/
-	metadata := map[string]interface{}{
-		"mpris:trackid":     "",
-		"mpris:length":      int64(0),
-		"xesam:album":       "",
-		"xesam:albumArtist": "",
-		"xesam:artist":      []string{},
-		"xesam:composer":    []string{},
-		"xesam:genre":       []string{},
-		"xesam:title":       "",
-		"xesam:trackNumber": int(0),
-	}
-
-	propSpec := map[string]map[string]*prop.Prop{
-		"org.mpris.MediaPlayer2.Player": {
-			"CanControl":    {Value: true, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"CanGoNext":     {Value: true, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"CanPause":      {Value: true, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"CanPlay":       {Value: true, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"CanSeek":       {Value: false, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"CanGoPrevious": {Value: false, Writable: false, Emit: prop.EmitFalse, Callback: nil},
-			"Metadata":      {Value: metadata, Writable: false, Emit: prop.EmitTrue, Callback: nil},
-			"Volume": {Value: float64(0.0), Writable: true, Emit: prop.EmitTrue, Callback: func(c *prop.Change) *dbus.Error {
-				oldVolume, err := mpp.player.Volume()
-				if err != nil {
-					mpp.logger.Printf(err.Error())
-					return nil
-				}
-				fvol := c.Value.(float64)
-				if fvol < 0 {
-					mpp.player.AdjustVolume(-oldVolume)
-					return nil
-				}
-				vol := int64(fvol * 100)
-				volDiff := vol - oldVolume
-				mpp.player.AdjustVolume(volDiff)
-				return nil
-			},
-			},
-			"PlaybackStatus": {Value: "", Writable: false, Emit: prop.EmitFalse, Callback: nil},
-		},
-	}
-	props, err := prop.Export(conn, "/org/mpris/MediaPlayer2", propSpec)
-	if err != nil {
-		return MprisPlayer{}, err
-	}
-	n := &introspect.Node{
-		Name: "/org/mpris/MediaPlayer2",
-		Interfaces: []introspect.Interface{
-			introspect.IntrospectData,
-			prop.IntrospectData,
-			{
-				Name:       "org.mpris.MediaPlayer2.Player",
-				Methods:    introspect.Methods(mpp),
-				Properties: props.Introspection("org.mpris.MediaPlayer2.Player"),
-			},
-		},
-	}
-	err = conn.Export(introspect.NewIntrospectable(n), "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Introspectable")
-	if err != nil {
-		return MprisPlayer{}, err
-	}
-	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
-	if err != nil {
-		return MprisPlayer{}, err
-	}
-	if reply != dbus.RequestNameReplyPrimaryOwner {
-		return MprisPlayer{}, fmt.Errorf("name already owned")
-	}
-	return mpp, nil
+// Next plays next track (implements mpris.Player)
+func (p *Player) Next() error {
+	p.PlayNextTrack()
+	return nil
 }
 
-func (m MprisPlayer) Close() {
-	m.conn.Close()
+// Previous plays previous track (implements mpris.Player)
+func (p *Player) Previous() error {
+	// stmp doesn't support previous
+	return nil
+}
+
+// GetPlaybackStatus returns current playback status (implements mpris.Player)
+func (p *Player) GetPlaybackStatus() (mpris.PlaybackStatus, error) {
+	state, err := p.State()
+	if err != nil {
+		return mpris.StatusStopped, err
+	}
+
+	switch state {
+	case PlayerPlaying:
+		return mpris.StatusPlaying, nil
+	case PlayerPaused:
+		return mpris.StatusPaused, nil
+	default:
+		return mpris.StatusStopped, nil
+	}
+}
+
+// GetMetadata returns track metadata (implements mpris.Player)
+func (p *Player) GetMetadata() (*mpris.Metadata, error) {
+	if len(p.Queue) == 0 {
+		return nil, nil
+	}
+
+	track := p.Queue[0]
+
+	metadata := &mpris.Metadata{
+		TrackID: track.Id,
+		Title:   track.Title,
+		Artist:  []string{track.Artist},
+	}
+
+	return metadata, nil
+}
+
+// CanPlay returns true if can play (implements mpris.Player)
+func (p *Player) CanPlay() bool {
+	return true
+}
+
+// CanPause returns true if can pause (implements mpris.Player)
+func (p *Player) CanPause() bool {
+	return true
+}
+
+// CanGoNext returns true if can go to next track (implements mpris.Player)
+func (p *Player) CanGoNext() bool {
+	return true
+}
+
+// CanGoPrevious returns true if can go to previous track (implements mpris.Player)
+func (p *Player) CanGoPrevious() bool {
+	return false // stmp doesn't support previous
+}
+
+// CanSeek returns true if can seek (implements mpris.Player)
+func (p *Player) CanSeek() bool {
+	return false // stmp doesn't support seeking via MPRIS
+}
+
+// CanControl returns true if player can be controlled (implements mpris.Player)
+func (p *Player) CanControl() bool {
+	return true
 }
